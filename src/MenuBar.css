@@ -1,0 +1,18 @@
+button {
+  background-color: #007BFF; /* 青系の色 */
+  color: white;
+  font-size: 16px;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+button:hover {
+  background-color: #0056b3; /* ホバー時に濃い青 */
+}
+
+.menu-bar button {
+  margin-right: 10px; /* ボタンの間隔を調整 */
+}

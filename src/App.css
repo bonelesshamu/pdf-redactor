@@ -1,0 +1,28 @@
+.menu-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 48px; /* 必要に応じて調整 */
+  background: white;
+  z-index: 3000; /* CanvasやTextLayerの上にくるように */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* 影もつけるとグッとUI感上がる */
+}
+
+.pdf-wrapper {
+  padding-top: 48px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: calc(100vh - 48px);
+  width: 100%;
+  z-Index: 20;
+}
+
+.pdf-wrapper.erase-mode {
+  cursor: url('/eraser_icon.cur'), auto; /* 消しゴムアイコンに変更 */
+}
+
+.pdf-wrapper.redact-mode {
+  cursor: url('/redact_icon.cur'), auto; /* 赤塗りアイコンに変更 */
+}

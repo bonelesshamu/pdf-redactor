@@ -1,0 +1,30 @@
+.pdf-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+canvas {
+  cursor: url('/eraser_icon.cur'), auto;
+}
+
+.textLayer {
+  color: transparent;
+  opacity: 1;
+  user-select: text;
+  pointer-events: auto;
+}
+
+.textLayer span {
+  position: absolute;
+  white-space: pre;
+  transform-origin: 0 0;
+  pointer-events: auto;
+  user-select: text;
+  background: rgba(255, 255, 0, 0.15); /* 一時的に目に見える背景にしてみる */
+
+}
+
