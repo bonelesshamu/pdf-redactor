@@ -11,13 +11,13 @@ export default function App() {
   const [actionHistory, setActionHistory] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
 
-  const addSelectionResults = useCallback((results) => {
-    setSelectionResults(prev => [...prev, results]);
-  }, []);
-
   const recordAction = useCallback((action) => {
     console.dir(action);
     setActionHistory(prev => [...prev, action])}, []);
+
+  const addSelectionResults = useCallback((results) => {
+    setSelectionResults(prev => [...prev, results]);
+  }, []);
 
   const removeSelectionResults = useCallback((matchedIndex) => {
     const removedResults = selectionResults.filter((_, i) => i === matchedIndex)[0];
