@@ -13,9 +13,9 @@ canvas {
 
 .textLayer {
   color: transparent;
-  opacity: 1;
   user-select: text;
   pointer-events: auto;
+  background: none !important;
 }
 
 .textLayer span {
@@ -24,7 +24,9 @@ canvas {
   transform-origin: 0 0;
   pointer-events: auto;
   user-select: text;
-  background: rgba(255, 255, 0, 0.15); /* 一時的に目に見える背景にしてみる */
-
 }
 
+.textLayer span::selection {
+  background: rgba(0, 100, 255, 0.3) !important;
+  color: inherit;
+}

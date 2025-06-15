@@ -110,12 +110,52 @@ export default function PdfCanvas({
     setShapePoints([]);
   }
 
+  const handleRedactClick2 = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed || !textLayerRef.current) return [];
+
+    let results = [];
+    const THRESHOLD = 30;
+    const range = selection.getRangeAt(0);
+    const rects = [...range.getClientRects()];
+    console.dir(rects);
+
+    const groupedRects = rects.reduce((acc, rect) => {
+      const existingRow = Object.entries(acc).find((rowTop, rowheight) => Math.abs(rowTop - rect.top) < THRESHOLD);
+      if (existingRow) acc[existingRow].push(rect);
+      else acc[rect.top] = [rect];
+      return acc;
+    }, {});
+    console.log("groupedRects");
+    console.dir(groupedRects);
+    console.log(textLayerRef.current.offsetLeft);
+    // ✅ 行単位で黒塗り
+    Object.values(groupedRects).forEach(rects => {
+      const minX = Math.min(...rects.map(rect => (rect.left - textLayerRef.current.offsetLeft) / viewport.scale));
+      const maxX = Math.max(...rects.map(rect => (rect.left + rect.width - textLayerRef.current.offsetLeft) / viewport.scale));
+      const minY = Math.min(...rects.map(rect => (viewport.height - (rect.top - textLayerRef.current.offsetTop + rect.height)) / viewport.scale));
+      const maxY = Math.max(...rects.map(rect => rect.bottom / viewport.scale));
+
+      results.push({
+        selectedX: minX,
+        selectedY: minY,
+        selectedWidth: maxX - minX,
+        selectedHeight: maxY - minY
+      });
+    })
+    console.dir(results);
+    addSelectionResults(results);
+    recordAction({ type: 'add', results: results });
+    selection.removeAllRanges();
+  }
+
   const handleRedactClick = () => {
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || selection.isCollapsed || !textLayerRef.current) return [];
 
     const range = selection.getRangeAt(0);
     const results = [];
+    const tmpResults = [];
     const spans = textLayerRef.current.querySelectorAll('span[data-index]');
     spans.forEach((span) => {
       const textNode = span.firstChild;
@@ -131,7 +171,7 @@ export default function PdfCanvas({
         length !== 0
         ) {
         const scaleFactor = window.devicePixelRatio;
-        console.log(scaleFactor);
+        // console.log(scaleFactor);
         const item = textItems[spanIndex];
         const startOffset = range.startContainer === textNode ? range.startOffset : 0;
         const endOffset = range.endContainer === textNode ? range.endOffset : spanText.length;
@@ -141,14 +181,15 @@ export default function PdfCanvas({
 
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
-        ctx.font = `${item.height * viewport.scale}px sans-serif`;
+        ctx.font = `${item.height * viewport.scale}px ` + item.fontName;
+        // console.log(ctx.font);
         const xOffset = ctx.measureText(preText).width;
         const x = item.transform[4] * viewport.scale + xOffset;
         const y = viewport.height - (item.transform[5] + item.height) * viewport.scale;
         const selectedWidth = ctx.measureText(selected).width;
         const height = item.height * viewport.scale * 1.2;
 
-        results.push({
+        tmpResults.push({
           itemIndex: spanIndex,
           selectedText: selectedText,
           offset: startOffset,
@@ -164,7 +205,28 @@ export default function PdfCanvas({
         });
       }
     });
-    console.dir(results);
+    console.dir(tmpResults);
+
+    const groupedRects = tmpResults.reduce((acc, rect) => {
+      const existingRow = Object.keys(acc).find(rowY => Math.abs(rowY - rect.selectedY) < 30);
+      if (existingRow) acc[existingRow].push(rect);
+      else acc[rect.selectedY] = [rect]; // ✅ 新しい行として追加
+
+      return acc;
+    }, {});
+    console.dir(groupedRects);
+    Object.values(groupedRects).forEach(rects => {
+        const minX = Math.min(...rects.map(rect => rect.selectedX));
+        const maxX = Math.max(...rects.map(rect => rect.selectedX + rect.selectedWidth));
+        const minY = Math.min(...rects.map(rect => rect.selectedY));
+        const maxY = Math.max(...rects.map(rect => rect.selectedY + rect.selectedHeight));
+        results.push({
+          selectedX: minX,
+          selectedY: minY,
+          selectedWidth: maxX-minX,
+          selectedHeight: maxY-minY
+        });
+    });
     addSelectionResults(results);
     recordAction({ type: 'add', results: results });
     selection.removeAllRanges();
@@ -236,7 +298,6 @@ export default function PdfCanvas({
         // メモ操作
         const matchedIndex = getSelectionResultIndexByCoordinate(e)
         if(matchedIndex !== -1){
-          console.dir(memo);
           selectedIndexRef.current = matchedIndex;
           setMemo(selectionResults[matchedIndex].memo? selectionResults[matchedIndex].memo:"");
           openMenu(e.clientX, e.clientY);
@@ -253,7 +314,7 @@ export default function PdfCanvas({
   };
 
   useEffect(() => {
-    const loadingTask = pdfjsLib.getDocument('/output.pdf');
+    const loadingTask = pdfjsLib.getDocument('/sample.pdf');
     loadingTask.promise.then((loadedPdf) => setPdf(loadedPdf));
   }, []);
 
@@ -284,8 +345,6 @@ export default function PdfCanvas({
         console.dir(selectionResults);
         selectionResults.forEach((results) => {
           results.forEach((result) => {
-            console.log("result");
-            console.dir(result);
             ctx.fillStyle = "black";
             if(result.shapeResult){
               ctx.beginPath();
@@ -378,7 +437,6 @@ export default function PdfCanvas({
             zIndex: 10,
             width: viewport.width,
             height: viewport.height,
-            color: 'transparent',
             userSelect: 'text',
             pointerEvents: 'auto',
           }}
@@ -395,11 +453,12 @@ export default function PdfCanvas({
                 style={{
                   position: 'absolute',
                   left: `${item.transform[4] * viewport.scale}px`,
-                  top: `${3+(viewport.height - item.transform[5] * viewport.scale - item.height * viewport.scale)}px`,
+                  top: `${10+(viewport.height - item.transform[5] * viewport.scale - item.height * viewport.scale)}px`,
                   width: `${item.width * viewport.scale}px`,
                   height: `${item.height * viewport.scale}px`,
                   transformOrigin: '0 0',
                   whiteSpace: 'pre',
+                  fontFamily: item.fontName || 'monospace',
                   fontSize: `${item.height * viewport.scale}px`,
                   lineHeight: `${item.height * viewport.scale }px`,
                 }}
