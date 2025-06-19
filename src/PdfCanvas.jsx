@@ -5,7 +5,6 @@ import './PdfCanvas.css';
 import ContextMenu from './ContextMenu';
 import {useContextMenu} from './useContextMenu.js';
 
-
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
   import.meta.url
@@ -19,12 +18,19 @@ export default function PdfCanvas({
   mode,
   pageNum }) {
   const canvasRef = useRef(null);
+  const maskCanvas1Ref = useRef(null);
+  const maskCanvas2Ref = useRef(null);
+  const isMaskCanvas1 = useRef(true);
   const pageRef = useRef(null);
   const textLayerRef = useRef(null);
   const selectedIndexRef = useRef(null);
   const figureCoordinate = useRef([]);
+  const prevSelectionResults = useRef([]);
   const isFigureAfterMouseDown = useRef(null);
   const overlayCanvasRef = useRef(null);
+  const renderTaskRef = useRef(null);
+  const drawLoopRef = useRef(0);
+
   const [memo, setMemo] = useState("");
   const [previewRect, setPreviewRect] = useState(null);
   const [pdf, setPdf] = useState(null);
@@ -108,45 +114,6 @@ export default function PdfCanvas({
     addSelectionResults(results);
     recordAction({ type: 'add', results: results });
     setShapePoints([]);
-  }
-
-  const handleRedactClick2 = () => {
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0 || selection.isCollapsed || !textLayerRef.current) return [];
-
-    let results = [];
-    const THRESHOLD = 30;
-    const range = selection.getRangeAt(0);
-    const rects = [...range.getClientRects()];
-    console.dir(rects);
-
-    const groupedRects = rects.reduce((acc, rect) => {
-      const existingRow = Object.entries(acc).find((rowTop, rowheight) => Math.abs(rowTop - rect.top) < THRESHOLD);
-      if (existingRow) acc[existingRow].push(rect);
-      else acc[rect.top] = [rect];
-      return acc;
-    }, {});
-    console.log("groupedRects");
-    console.dir(groupedRects);
-    console.log(textLayerRef.current.offsetLeft);
-    // ✅ 行単位で黒塗り
-    Object.values(groupedRects).forEach(rects => {
-      const minX = Math.min(...rects.map(rect => (rect.left - textLayerRef.current.offsetLeft) / viewport.scale));
-      const maxX = Math.max(...rects.map(rect => (rect.left + rect.width - textLayerRef.current.offsetLeft) / viewport.scale));
-      const minY = Math.min(...rects.map(rect => (viewport.height - (rect.top - textLayerRef.current.offsetTop + rect.height)) / viewport.scale));
-      const maxY = Math.max(...rects.map(rect => rect.bottom / viewport.scale));
-
-      results.push({
-        selectedX: minX,
-        selectedY: minY,
-        selectedWidth: maxX - minX,
-        selectedHeight: maxY - minY
-      });
-    })
-    console.dir(results);
-    addSelectionResults(results);
-    recordAction({ type: 'add', results: results });
-    selection.removeAllRanges();
   }
 
   const handleRedactClick = () => {
@@ -318,10 +285,8 @@ export default function PdfCanvas({
     loadingTask.promise.then((loadedPdf) => setPdf(loadedPdf));
   }, []);
 
-  const renderTaskRef = useRef(null);
-
   useEffect(() => {
-    console.log("redrawing");
+    console.log("first drawing");
     if (!viewport || !canvasRef.current || !pageRef.current) return;
     if (renderTaskRef.current) {
       console.log("Render in progress, skipping.");
@@ -333,37 +298,109 @@ export default function PdfCanvas({
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    const overlayCtx = overlayCanvasRef.current.getContext("2d");
-    overlayCtx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
-    //ctx.clearRect(0, 0, canvas.width, canvas.height); // ← 全面クリア
     const task = pageRef.current.render({ canvasContext: ctx, viewport });
     renderTaskRef.current = task;
 
     task.promise.then(() => {
       renderTaskRef.current = null;
-      if (selectionResults){
-        console.dir(selectionResults);
-        selectionResults.forEach((results) => {
-          results.forEach((result) => {
-            ctx.fillStyle = "black";
-            if(result.shapeResult){
-              ctx.beginPath();
-              result.shapeResult.forEach((point, index) => {
-                if (index === 0) ctx.moveTo(point.x, point.y);
-                else ctx.lineTo(point.x, point.y);
-              });
-              ctx.closePath();
-              ctx.fill();
-            } else {
-              ctx.fillRect(result.selectedX, result.selectedY, result.selectedWidth, result.selectedHeight);
-            }
-          });
-        });
-      }
     }).catch((error) => {
       console.warn("Render cancelled or failed:", error);
-      renderTaskRef.current = null;
     });
+  }, [viewport, textItems]);
+
+  useEffect(() => {
+    console.log("redrawing");
+    if (!viewport || !canvasRef.current || !pageRef.current) return;
+    if (renderTaskRef.current) {
+      console.log("Render in progress, skipping.");
+      return;
+    }
+    // ページが変わらない限り、再描画はしない。
+    // const maskCanvas = maskCanvasRef.current;
+    // const ctx = maskCanvas.getContext('2d', { willReadFrequently: true });
+    // if(maskCanvas.width !== viewport.width || maskCanvas.height !== viewport.height){
+    //   maskCanvas.width = viewport.width;
+    //   maskCanvas.height = viewport.height;
+    // }
+    // ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const overlayCtx = overlayCanvasRef.current.getContext("2d");
+    overlayCtx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
+    // ctx.clearRect(0, 0, maskCanvasRef.current.width, maskCanvasRef.current.height);
+    console.dir(prevSelectionResults.current);
+    console.dir(selectionResults);
+
+    //差分更新を考えたが、重なるとうまくいかない。
+    // const addResults = selectionResults.filter((present) => !prevSelectionResults.current.some(prev => prev.maskId === present.maskId));
+    // console.dir(addResults);
+    // const delResults = prevSelectionResults.current.filter((prev) => !selectionResults.some(present => prev.maskId === present.maskId));
+    // console.dir(delResults);
+    isMaskCanvas1.current = !isMaskCanvas1.current;
+
+    const draw = () => {
+      const maskCanvas = isMaskCanvas1.current? maskCanvas1Ref.current:maskCanvas2Ref.current;
+      const clearCanvas = !isMaskCanvas1.current? maskCanvas1Ref.current:maskCanvas2Ref.current;
+      if (!maskCanvas) return;
+      const ctxMask = maskCanvas.getContext('2d');
+      const ctxClear = clearCanvas.getContext('2d');
+      if (!ctxMask) return;
+      // addResults.forEach(results => {
+      //   ctxMask.fillStyle = "black";
+      //   results.forEach(result => {
+      //     if (result.shapeResult) {
+      //       ctxMask.beginPath();
+      //       result.shapeResult.forEach((point, idx) => {
+      //         if (idx === 0) ctxMask.moveTo(point.x, point.y);
+      //         else ctxMask.lineTo(point.x, point.y);
+      //       });
+      //       ctxMask.closePath();
+      //       ctxMask.fill();
+      //     } else {
+      //       ctxMask.fillRect(result.selectedX, result.selectedY, result.selectedWidth, result.selectedHeight);
+      //     }
+      //   })
+      // });
+      // delResults.forEach(results => {
+      //   results.forEach(result => {
+      //     if (result.shapeResult) {
+      //       ctxMask.save();
+      //       ctxMask.beginPath();
+      //       result.shapeResult.forEach((point, idx) => {
+      //         if (idx === 0) ctxMask.moveTo(point.x, point.y);
+      //         else ctxMask.lineTo(point.x, point.y);
+      //       });
+      //       ctxMask.closePath();
+      //       ctxMask.clip();
+      //       ctxMask.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+      //       ctxMask.restore();
+      //     } else {
+      //       ctxMask.clearRect(result.selectedX-2, result.selectedY-2, result.selectedWidth+4, result.selectedHeight+4);
+      //     }
+      //   })
+      // });
+      selectionResults.forEach((results) => {
+        results.forEach((result) => {
+          ctxMask.fillStyle = "black";
+          if(result.shapeResult){
+            ctxMask.beginPath();
+            result.shapeResult.forEach((point, index) => {
+              if (index === 0) ctxMask.moveTo(point.x, point.y);
+              else ctxMask.lineTo(point.x, point.y);
+            });
+            ctxMask.closePath();
+            ctxMask.fill();
+          } else {
+            ctxMask.fillRect(result.selectedX, result.selectedY, result.selectedWidth, result.selectedHeight);
+          }
+        });
+      });
+      ctxClear.clearRect(0, 0, clearCanvas.width, clearCanvas.height);
+
+      drawLoopRef.current = requestAnimationFrame(draw); // ← 再帰的に呼び出す
+    };
+    drawLoopRef.current = requestAnimationFrame(draw); // ← 初回の呼び出し
+    prevSelectionResults.current = structuredClone(selectionResults);
+
+    return () => cancelAnimationFrame(drawLoopRef.current); // クリーンアップ
   }, [viewport, selectionResults, textItems, recordAction]);
 
   useEffect(() => {
@@ -376,6 +413,7 @@ export default function PdfCanvas({
 
         // ページ本体だけ一旦保持
         pageRef.current = page;
+        console.log("setViewport");
         setViewport(vp); // ← viewportだけ先に保存
       });
     }
@@ -419,6 +457,18 @@ export default function PdfCanvas({
           width={viewport.width}
           height={viewport.height}
           style={{ border: '1px solid #ccc', position: 'absolute', top: '48px', zIndex: 1, pointerEvents: 'none' }}
+        />
+        <canvas
+          ref={maskCanvas1Ref}
+          width={viewport.width}
+          height={viewport.height}
+          style={{ border: '1px solid #ccc', position: 'absolute', top: '48px', zIndex: 10, pointerEvents: 'none', opacity: '1' }}
+        />
+        <canvas
+          ref={maskCanvas2Ref}
+          width={viewport.width}
+          height={viewport.height}
+          style={{ border: '1px solid #ccc', position: 'absolute', top: '48px', zIndex: 10, pointerEvents: 'none', opacity: '1' }}
         />
         <canvas
           ref={overlayCanvasRef}

@@ -4,6 +4,11 @@ import PdfCanvas from './PdfCanvas';
 import { v4 as uuid } from "uuid";
 import "./App.css";
 
+let maskIdCounter = 0;
+function generateMaskId() {
+  return `mask-${Date.now()}-${maskIdCounter++}`;
+}
+
 export default function App() {
   const [mode, setMode] = useState('redact'); // 'redact' or 'erase'
   const [pageNum, setPageNum] = useState(1);
@@ -16,6 +21,7 @@ export default function App() {
     setActionHistory(prev => [...prev, action])}, []);
 
   const addSelectionResults = useCallback((results) => {
+    results.maskId = generateMaskId();
     setSelectionResults(prev => [...prev, results]);
   }, []);
 
