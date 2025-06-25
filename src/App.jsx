@@ -15,6 +15,8 @@ export default function App() {
   const [selectionResults, setSelectionResults] = useState([]);
   const [actionHistory, setActionHistory] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
+  const [value, setValue] = useState("");
+
 
   const recordAction = useCallback((action) => {
     console.dir(action);
@@ -71,7 +73,7 @@ export default function App() {
   return (
     <div>
       <div className="menu-bar">
-        <MenuBar onUndo={undo} onRedo={redo} mode={mode} setMode={setMode} pageNum={pageNum} setPageNum={setPageNum} />
+        <MenuBar onUndo={undo} onRedo={redo} mode={mode} setMode={setMode} pageNum={pageNum} setPageNum={setPageNum} setValue={setValue}/>
       </div>
       <div className={`pdf-wrapper ${mode}-mode`}>
         <PdfCanvas selectionResults={selectionResults}
@@ -79,7 +81,8 @@ export default function App() {
           removeSelectionResults={removeSelectionResults}
           recordAction={recordAction}
           mode={mode}
-          pageNum={pageNum} />
+          pageNum={pageNum}
+          value={value} />
       </div>
     </div>
   );

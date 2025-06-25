@@ -1,7 +1,17 @@
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import './MenuBar.css';
 
-export default function MenuBar({ onUndo, onRedo, mode, setMode, pageNum, setPageNum }) {
+export default function MenuBar({ onUndo, onRedo, mode, setMode, pageNum, setPageNum, setValue }) {
+  const dialogRef = useRef(null);
+  const inputRef = useRef(null);
+
+  const openDialog = () => dialogRef.current?.showModal();
+  const applyAndClose = () => {
+    const inputValue = inputRef.current?.value || "";
+    setValue(inputValue);
+    dialogRef.current?.close();
+  };
+
   return (
     <div className="menu-bar-buttons">
       <button onClick={() => setMode('redact')} style={{ fontWeight: mode === 'redact' ? 'bold' : 'normal', backgroundColor: mode === 'redact' ? '#ff7bff' : '#007bff'  }}>
@@ -16,6 +26,9 @@ export default function MenuBar({ onUndo, onRedo, mode, setMode, pageNum, setPag
       <button onClick={() => setMode('shape')} style={{ fontWeight: mode === 'shape' ? 'bold' : 'normal', backgroundColor: mode === 'shape' ? '#ff7bff' : '#007bff' }}>
         任意図形描画モード
       </button>
+      <button onClick={openDialog} style={{ fontWeight: mode === 'shape' ? 'bold' : 'normal', backgroundColor: mode === 'shape' ? '#ff7bff' : '#007bff' }}>
+        辞書モード
+      </button>
       <button onClick={onUndo}>Undo</button>
       <button onClick={onRedo}>Redo</button>
       <span style={{ marginLeft: '20px' }}>ページ: {pageNum}</span>
@@ -26,6 +39,14 @@ export default function MenuBar({ onUndo, onRedo, mode, setMode, pageNum, setPag
         onChange={(e) => setPageNum(parseInt(e.target.value))}
         style={{ width: '50px', marginLeft: '10px' }}
       />
-    </div>
+      <dialog ref={dialogRef} className="dictionary-dialog">
+        <p>これはダイアログです</p>
+        <p>テキストを入力してください：</p>
+        <input ref={inputRef} type="text" defaultValue={inputRef.current?.value} />
+        <div style={{ marginTop: "1em" }}>
+          <button onClick={applyAndClose}>適用</button>
+        </div>
+      </dialog>
+   </div>
   );
 }

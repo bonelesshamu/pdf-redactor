@@ -16,7 +16,8 @@ export default function PdfCanvas({
   removeSelectionResults,
   recordAction,
   mode,
-  pageNum }) {
+  pageNum,
+  value }) {
   const canvasRef = useRef(null);
   const maskCanvas1Ref = useRef(null);
   const maskCanvas2Ref = useRef(null);
@@ -281,7 +282,7 @@ export default function PdfCanvas({
   };
 
   useEffect(() => {
-    const loadingTask = pdfjsLib.getDocument('/sample.pdf');
+    const loadingTask = pdfjsLib.getDocument('/data.pdf');
     loadingTask.promise.then((loadedPdf) => setPdf(loadedPdf));
   }, []);
 
@@ -413,7 +414,6 @@ export default function PdfCanvas({
 
         // ページ本体だけ一旦保持
         pageRef.current = page;
-        console.log("setViewport");
         setViewport(vp); // ← viewportだけ先に保存
       });
     }
@@ -448,6 +448,148 @@ export default function PdfCanvas({
     overlayCtx.setLineDash([]);
   }, [shapePoints]);
 
+  function findAllMatches(str, keyword) {
+    const result = [];
+    const regex = new RegExp(keyword, 'g');
+    let match;
+
+    while ((match = regex.exec(str)) !== null) {
+      const start = match.index;
+      const end = start + keyword.length - 1;
+      result.push([start, end]);
+    }
+
+    return result;
+  }
+
+  useEffect(() =>{
+    console.log(value);
+    const tmpResults = [];
+    const results = [];
+    if(!canvasRef.current) return;
+    const ctx = canvasRef.current.getContext('2d');
+
+    // textItems.forEach((item) => {
+      // const text = item.str;
+      // const matches = findAllMatches(text, value);
+      // if (matches.length === 0) return;
+
+      // ctx.font = `${item.height * viewport.scale}px ${item.fontName}`;
+
+      // matches.forEach(([start, end]) => {
+      //   const preText = text.slice(0, start);
+      //   const matchText = text.slice(start, end + 1);
+
+      //   const xOffset = ctx.measureText(preText).width;
+      //   const matchWidth = ctx.measureText(matchText).width;
+
+      //   const x = item.transform[4] * viewport.scale + xOffset;
+      //   const y = viewport.height - (item.transform[5] + item.height) * viewport.scale;
+      //   const height = item.height * viewport.scale * 1.2;
+
+      //   ctx.fillStyle = "rgba(255, 255, 0, 0.4)";
+      //   ctx.fillRect(x, y, matchWidth, height);
+      // });
+    //   const chars = item.str.split("");
+    //   let offsetX = 0;
+
+    //   chars.forEach((char, i) => {
+    //     const charWidth = ctx.measureText(char).width;
+
+    //     if (char === "公" || char === "紀") {
+    //       const x = item.transform[4] * viewport.scale + offsetX;
+    //       const y = viewport.height - (item.transform[5] + item.height) * viewport.scale;
+    //       const height = item.height * viewport.scale * 1.2;
+
+    //       ctx.fillStyle = "rgba(255, 255, 0, 0.4)";
+    //       ctx.fillRect(x, y, charWidth, height);
+    //     }
+
+    //     offsetX += charWidth;
+    //   });
+
+    // });
+
+
+    if(!textLayerRef.current) return;
+    const spans = textLayerRef.current.querySelectorAll('span[data-index]');
+    if(!spans) return;
+    spans.forEach((span) => {
+      const textNode = span.firstChild;
+      if (!textNode || textNode.nodeType !== Node.TEXT_NODE) return;
+      const spanIndex = parseInt(span.dataset.index, 10);
+      const spanText = textNode.textContent;
+      const matches = findAllMatches(spanText, value);
+      const scaleFactor = window.devicePixelRatio;
+      console.log(scaleFactor);
+      const item = textItems[spanIndex];
+      console.dir(item);
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+      ctx.font = `${item.height * viewport.scale}px ` + item.fontName;
+      console.log(ctx.font);
+      const domWidth = span.getBoundingClientRect().width;
+      const canvasWidth = ctx.measureText(item.str).width;
+      const scaleFactor2 = domWidth / canvasWidth;
+      console.log(item.str, domWidth, canvasWidth, scaleFactor2);
+      matches.forEach((match) => {
+        // console.log(match);
+        const startOffset = match[0];
+        const endOffset = match[1]+1;
+        const selectedText = spanText.slice(startOffset, endOffset);
+        const preText = spanText.slice(0, startOffset);
+        console.log(preText);
+        const xOffset = ctx.measureText(preText).width;
+        console.log(xOffset);
+        const metrics = ctx.measureText(preText);
+        console.dir(metrics);
+        const width = metrics.actualBoundingBoxRight - metrics.actualBoundingBoxLeft;
+        console.log(width);
+        const x = Math.ceil(item.transform[4] * viewport.scale + xOffset * scaleFactor2);
+        const y = viewport.height - (item.transform[5] + item.height) * viewport.scale;
+        const selectedWidth = Math.ceil(ctx.measureText(selectedText).width * scaleFactor2);
+        const height = item.height * viewport.scale * 1.2;
+        results.push({
+          itemIndex: spanIndex,
+          selectedText: selectedText,
+          offset: startOffset,
+          length: endOffset - startOffset,
+          spanLeft: span.offsetLeft * scaleFactor,
+          spanTop: span.offsetTop * scaleFactor,
+          spanWidth: span.offsetWidth * scaleFactor,
+          spanHeight: span.offsetHeight * scaleFactor,
+          selectedX: x,
+          selectedY: y,
+          selectedWidth: selectedWidth,
+          selectedHeight: height
+        });
+        // const groupedRects = tmpResults.reduce((acc, rect) => {
+        //   const existingRow = Object.keys(acc).find(rowY => Math.abs(rowY - rect.selectedY) < 30);
+        //   if (existingRow) acc[existingRow].push(rect);
+        //   else acc[rect.selectedY] = [rect]; // ✅ 新しい行として追加
+        //   return acc;
+        // }, {});
+        // console.dir(tmpResults);
+        // results.push(tmpResults);
+        // Object.values(tmpResults).forEach(rects => {
+        //     const minX = Math.min(...rects.map(rect => rect.selectedX));
+        //     const maxX = Math.max(...rects.map(rect => rect.selectedX + rect.selectedWidth));
+        //     const minY = Math.min(...rects.map(rect => rect.selectedY));
+        //     const maxY = Math.max(...rects.map(rect => rect.selectedY + rect.selectedHeight));
+        //     results.push({
+        //       selectedX: minX,
+        //       selectedY: minY,
+        //       selectedWidth: maxX-minX,
+        //       selectedHeight: maxY-minY
+        //     });
+        // });
+      });
+      addSelectionResults(results);
+      recordAction({ type: 'add', results: results });
+    });
+
+  }, [value]);
+
   return (
     viewport && (
       <div className="pdf-container" onContextMenu={(event) => handleRightClick(event)}>
@@ -479,6 +621,7 @@ export default function PdfCanvas({
         />
         {/* ← 自前で描いたテキストレイヤー */}
         <div
+          id="text-layer"
           className="textLayer"
           ref={textLayerRef}
           style={{
@@ -503,14 +646,17 @@ export default function PdfCanvas({
                 style={{
                   position: 'absolute',
                   left: `${item.transform[4] * viewport.scale}px`,
-                  top: `${10+(viewport.height - item.transform[5] * viewport.scale - item.height * viewport.scale)}px`,
+                  top: `${3+(viewport.height - item.transform[5] * viewport.scale - item.height * viewport.scale)}px`,
                   width: `${item.width * viewport.scale}px`,
+                  // width: 'auto',
                   height: `${item.height * viewport.scale}px`,
                   transformOrigin: '0 0',
                   whiteSpace: 'pre',
-                  fontFamily: item.fontName || 'monospace',
+                  // fontFamily: item.fontName || 'monospace',
+                  fontFamily: item.fontName,
                   fontSize: `${item.height * viewport.scale}px`,
                   lineHeight: `${item.height * viewport.scale }px`,
+                  letterSpacing: '0px',
                 }}
               >
                 {item.str}
