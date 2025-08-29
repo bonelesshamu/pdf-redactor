@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState} from 'react';
+import React, { useEffect, useRef, useState, useLayoutEffect} from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import './PdfWorker';
 import './PdfCanvas.css';
@@ -39,6 +39,32 @@ export default function PdfCanvas({
   const [viewport, setViewport] = useState(null);
   const [shapePoints, setShapePoints] = useState([]);
   const { contextMenu, openMenu, closeMenu } = useContextMenu();
+
+  const measureRef = useRef(null);
+  const [scaleMap, setScaleMap] = useState({});
+
+  useLayoutEffect(() => {
+    if (!measureRef.current) return;
+
+    // 描画完了後に測定
+    const spans = Array.from(measureRef.current.querySelectorAll('span'));
+    const tempMap = {};
+
+    spans.forEach((span, index) => {
+      const htmlWidth = span.getBoundingClientRect().width;
+      const canvasWidth = textItems[index].width * viewport.scale;
+      const scaleX = canvasWidth / htmlWidth;
+      console.log(textItems[index].str);
+      console.log(textItems[index].width);
+      console.log(canvasWidth)
+      console.log(htmlWidth)
+      tempMap[index] = scaleX;
+    });
+    console.dir(tempMap);
+
+    setScaleMap(tempMap);
+  }, [textItems, viewport]);
+
 
   const handleMouseDown = (e) => {
     console.log("handleMouseDown");
@@ -282,34 +308,6 @@ export default function PdfCanvas({
   };
 
   useEffect(() => {
-    const loadingTask = pdfjsLib.getDocument('/data.pdf');
-    loadingTask.promise.then((loadedPdf) => setPdf(loadedPdf));
-  }, []);
-
-  useEffect(() => {
-    console.log("first drawing");
-    if (!viewport || !canvasRef.current || !pageRef.current) return;
-    if (renderTaskRef.current) {
-      console.log("Render in progress, skipping.");
-      return;
-    }
-
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    const task = pageRef.current.render({ canvasContext: ctx, viewport });
-    renderTaskRef.current = task;
-
-    task.promise.then(() => {
-      renderTaskRef.current = null;
-    }).catch((error) => {
-      console.warn("Render cancelled or failed:", error);
-    });
-  }, [viewport, textItems]);
-
-  useEffect(() => {
     console.log("redrawing");
     if (!viewport || !canvasRef.current || !pageRef.current) return;
     if (renderTaskRef.current) {
@@ -403,21 +401,6 @@ export default function PdfCanvas({
 
     return () => cancelAnimationFrame(drawLoopRef.current); // クリーンアップ
   }, [viewport, selectionResults, textItems, recordAction]);
-
-  useEffect(() => {
-    if (pdf) {
-      pdf.getPage(pageNum).then((page) => {
-        const vp = page.getViewport({ scale: 1.5, rotation: 0 });
-        page.getTextContent().then((textContent) => {
-          setTextItems(textContent.items.filter(item => item.str.trim().length > 0));
-        });
-
-        // ページ本体だけ一旦保持
-        pageRef.current = page;
-        setViewport(vp); // ← viewportだけ先に保存
-      });
-    }
-  }, [pdf, pageNum]);
 
   useEffect(() => {
     if (!previewRect || !overlayCanvasRef.current) return;
@@ -545,7 +528,8 @@ export default function PdfCanvas({
         console.dir(metrics);
         const width = metrics.actualBoundingBoxRight - metrics.actualBoundingBoxLeft;
         console.log(width);
-        const x = Math.ceil(item.transform[4] * viewport.scale + xOffset * scaleFactor2);
+        // const x = Math.ceil(item.transform[4] * viewport.scale + xOffset * scaleFactor2);
+        const x = Math.ceil(item.transform[4] * viewport.scale + xOffset);
         const y = viewport.height - (item.transform[5] + item.height) * viewport.scale;
         const selectedWidth = Math.ceil(ctx.measureText(selectedText).width * scaleFactor2);
         const height = item.height * viewport.scale * 1.2;
@@ -590,6 +574,58 @@ export default function PdfCanvas({
 
   }, [value]);
 
+
+  useEffect(() => {
+    const loadingTask = pdfjsLib.getDocument({
+      url: '/output7.pdf',
+      cMapUrl: '/cmaps/',       // CMapファイルのパス
+      cMapPacked: true          // CMapが圧縮されているかどうか
+    }
+    );
+    loadingTask.promise.then((loadedPdf) => setPdf(loadedPdf));
+  }, []);
+
+  useEffect(() => {
+    if (pdf) {
+      pdf.getPage(pageNum).then((page) => {
+        page.get
+        const vp = page.getViewport({ scale: 1.5, rotation: page.rotate });
+        page.getTextContent().then((textContent) => {
+          setTextItems(textContent.items.filter(item => item.str.trim().length > 0));
+        });
+
+        // ページ本体だけ一旦保持
+        pageRef.current = page;
+        setViewport(vp); // ← viewportだけ先に保存
+      });
+    }
+  }, [pdf, pageNum]);
+
+
+  useEffect(() => {
+    console.log("first drawing");
+    if (!viewport || !canvasRef.current || !pageRef.current) return;
+    if (renderTaskRef.current) {
+      console.log("Render in progress, skipping.");
+      return;
+    }
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const rotation = pageRef.current.rotate; // PDFの回転角度（0, 90, 180, 270）
+    const task = pageRef.current.render({ canvasContext: ctx, viewport: pageRef.current.getViewport({ scale: 1.5, rotation: rotation }) });
+    renderTaskRef.current = task;
+
+    task.promise.then(() => {
+      renderTaskRef.current = null;
+    }).catch((error) => {
+      console.warn("Render cancelled or failed:", error);
+    });
+  }, [viewport, textItems]);
+
   return (
     viewport && (
       <div className="pdf-container" onContextMenu={(event) => handleRightClick(event)}>
@@ -632,6 +668,8 @@ export default function PdfCanvas({
             height: viewport.height,
             userSelect: 'text',
             pointerEvents: 'auto',
+            color: 'blue',
+            // transformOrigin: 'top left',
           }}
           onMouseDown={(event) => handleMouseDown(event)}
           onMouseMove={(event) => handleMouseMove(event)}
@@ -639,24 +677,43 @@ export default function PdfCanvas({
         >
           {textItems.map((item, index) => {
             const [a, b, c, d, e, f] = item.transform;
+            // const angle = Math.round(Math.atan2(b, a) * (180 / Math.PI)); // 回転角度を算出
+            // const transform = `matrix(${a}, ${b}, ${c}, ${d}, ${e}, ${f})`;
             return (
               <span
                 key={index}
                 data-index={index}
                 style={{
-                  position: 'absolute',
+                  // position: 'absolute',
+                  // transform: `matrix(${a}, ${b}, ${c}, ${d}, ${e}, ${f})`,
+                  // transformOrigin: '0 0',
+                  //left: `${item.transform[4] * viewport.scale}px`,
                   left: `${item.transform[4] * viewport.scale}px`,
                   top: `${3+(viewport.height - item.transform[5] * viewport.scale - item.height * viewport.scale)}px`,
+                  // top: `${3+(item.transform[5] * viewport.scale)}px`,
                   width: `${item.width * viewport.scale}px`,
                   // width: 'auto',
                   height: `${item.height * viewport.scale}px`,
-                  transformOrigin: '0 0',
-                  whiteSpace: 'pre',
                   // fontFamily: item.fontName || 'monospace',
-                  fontFamily: item.fontName,
+
+                  // 90度違い
+                  // left: `${f * viewport.scale}px`,
+                  // top: `${e * viewport.scale - item.height * viewport.scale + 3}px`,
+
+                  // 0度
+                  // left: `${e * viewport.scale}px`,
+                  // top: `${4+(viewport.height - f * viewport.scale - item.height * viewport.scale)}px`,
+                  // width: `${item.width * viewport.scale}px`,
+                  // height: `${item.height * viewport.scale}px`,
                   fontSize: `${item.height * viewport.scale}px`,
-                  lineHeight: `${item.height * viewport.scale }px`,
-                  letterSpacing: '0px',
+                  lineHeight: `${item.height * viewport.scale}px`,
+                  fontFamily: item.fontName,
+                  // transform: `scaleX(${a/d* item.str.length>10&&item.height*viewport.scale>11? 1.03:1})`,
+                  // fontSize: `${item.height*viewport.scale}px`,
+                  // lineHeight: `${item.height*viewport.scale}px`,
+                  whiteSpace: 'pre',
+                  transform: `scaleX(${scaleMap[index] ?? ""})`,
+                  // letterSpacing: '0.4px',
                 }}
               >
                 {item.str}
@@ -665,6 +722,32 @@ export default function PdfCanvas({
           })}
         </div>
         {contextMenu.visible && <ContextMenu x={contextMenu.x} y={contextMenu.y} memo={memo} onClose={closeMenu} onConfirm={handleConfirm}/>}
+        {/* 計測用の非表示DOM */}
+        <div
+          ref={measureRef}
+          style={{
+            // visibility: 'hidden',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            zIndex: 1000,
+          }}
+        >
+          {textItems.map((item, index) => (
+            <div key={`measure-${index}`}>
+              <span
+                key={index}
+                style={{
+                  fontSize: `${item.height * viewport.scale}px`,
+                  fontFamily: item.fontName || 'serif',
+                  whiteSpace: 'pre',
+                }}
+              >
+                {item.str}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
     )
   );
